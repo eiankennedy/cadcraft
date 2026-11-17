@@ -8,6 +8,7 @@
 //! [`CadApp::logic`](crate::CadApp::logic) resolves once per frame from the user's [`ThemePref`].
 
 use std::cell::Cell;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use egui::{Color32, FontFamily, FontId, Theme, Visuals};
 use serde::{Deserialize, Serialize};
@@ -64,6 +65,23 @@ pub fn active() -> Theme {
 
 pub fn set_active(theme: Theme) {
     ACTIVE.with(|a| a.set(theme));
+}
+
+/// Workbench's look (dark, flat, its mode's accent) when CADCraft runs inside Workbench's panel:
+/// 0 = off, else `0x01RRGGBB`. Set by the `view.workbench` command.
+static WORKBENCH: AtomicU32 = AtomicU32::new(0);
+
+/// Turn Workbench's look on with an accent colour, or off with `None`.
+pub fn set_workbench(accent: Option<Color32>) {
+    let v = accent.map_or(0, |c| 0x0100_0000 | (u32::from(c.r()) << 16) | (u32::from(c.g()) << 8) | u32::from(c.b()));
+    WORKBENCH.store(v, Ordering::Relaxed);
+}
+
+/// The accent Workbench set, when its look is on.
+pub fn workbench_accent() -> Option<Color32> {
+    let v = WORKBENCH.load(Ordering::Relaxed);
+    let [_, r, g, b] = v.to_be_bytes();
+    (v != 0).then(|| Color32::from_rgb(r, g, b))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -205,8 +223,45 @@ impl Tokens {
         ..Tokens::DARK
     };
 
-    /// The palette of `theme`.
+    /// Workbench's palette: near-black surfaces, hairline borders, warm white text, its mode's
+    /// accent. The drawing-area marks (selection, grips, snap markers) keep [`Tokens::DARK`]'s.
+    pub fn workbench(accent: Color32) -> Tokens {
+        let rgb = Color32::from_rgb;
+        let sunk = rgb(0x06, 0x06, 0x07);
+        Tokens {
+            chrome: rgb(0x12, 0x13, 0x16),
+            chrome_dark: sunk,
+            panel: rgb(0x18, 0x19, 0x1c),
+            tab_active: rgb(0x26, 0x27, 0x2a),
+            control: rgb(0x26, 0x27, 0x2a),
+            control_hover: rgb(0x33, 0x34, 0x36),
+            border: rgb(0x33, 0x34, 0x36),
+            text: rgb(0xf2, 0xf1, 0xee),
+            text_dim: rgb(0x98, 0x99, 0x98),
+            text_faint: rgb(0x83, 0x84, 0x85),
+            icon: rgb(0xd8, 0xd7, 0xd4),
+            icon_accent: accent,
+            accent,
+            cmd_bg: Color32::from_rgba_unmultiplied_const(0x12, 0x13, 0x16, 0xf0),
+            toggle_on: accent,
+            field: sunk,
+            select_bg: accent,
+            cmd_history: Color32::from_rgba_unmultiplied_const(0x12, 0x13, 0x16, 0xc8),
+            cmd_border: rgb(0x33, 0x34, 0x36),
+            cmd_keyword: accent,
+            cmd_keyword_hover: rgb(0x26, 0x27, 0x2a),
+            list_bg: rgb(0x18, 0x19, 0x1c),
+            list_row: rgb(0x26, 0x27, 0x2a),
+            ..Tokens::DARK
+        }
+        .with_model_background(sunk)
+    }
+
+    /// The palette of `theme`, or Workbench's while its look is on.
     pub fn of(theme: Theme) -> Tokens {
+        if let Some(accent) = workbench_accent() {
+            return Tokens::workbench(accent);
+        }
         match theme {
             Theme::Dark => Tokens::DARK,
             Theme::Light => Tokens::LIGHT,
@@ -761,7 +816,9 @@ fn any_script(faces: &[cadcraft_fonts::CraftFont], script: &str) -> bool {
 /// egui's visuals for `theme`, from its tokens.
 fn visuals(theme: Theme) -> Visuals {
     let t = Tokens::of(theme);
+    // Workbench's look is dark whichever theme is chosen
     let mut v = match theme {
+        _ if workbench_accent().is_some() => Visuals::dark(),
         Theme::Dark => Visuals::dark(),
         Theme::Light => Visuals::light(),
     };
@@ -784,8 +841,15 @@ fn visuals(theme: Theme) -> Visuals {
     v.window_stroke = egui::Stroke::new(1.0, t.border);
     let shadow = Color32::from_black_alpha(if theme == Theme::Dark { 90 } else { 40 });
     v.popup_shadow = egui::epaint::Shadow { offset: [0, 4], blur: 12, spread: 0, color: shadow };
-    v.window_corner_radius = egui::CornerRadius::same(6);
-    v.menu_corner_radius = egui::CornerRadius::same(5);
+    // Workbench is square-cornered
+    let flat = workbench_accent().is_some();
+    v.window_corner_radius = egui::CornerRadius::same(if flat { 0 } else { 6 });
+    v.menu_corner_radius = egui::CornerRadius::same(if flat { 0 } else { 5 });
+    if flat {
+        for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
+            w.corner_radius = egui::CornerRadius::ZERO;
+        }
+    }
     v
 }
 

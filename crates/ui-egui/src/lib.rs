@@ -118,6 +118,10 @@ pub struct UiState {
     /// Show an in-window menu bar (platforms without a native menu bar, or on request).
     pub in_window_menu: bool,
     pub start_tab: bool,
+    /// Hands off: only the drawing area is drawn (no title bar, tool bar, menus, palettes, file
+    /// tabs, command line or status bar), for when an agent does the work and the person watches.
+    /// Set with `view.handsOff`.
+    pub hands_off: bool,
     pub dialog: Option<String>,
     pub history_lines: usize,
     /// The user's keyboard shortcuts ([`keys`]).
@@ -208,6 +212,7 @@ impl Default for UiState {
             properties_all: true,
             in_window_menu: !cfg!(target_os = "macos"),
             start_tab: false,
+            hands_off: false,
             dialog: None,
             history_lines: 3,
             shortcuts: keys::UserKeys::new(),
@@ -1087,24 +1092,30 @@ impl CadApp {
         let t0 = now_ms();
         control::begin_frame(ui.ctx());
         let t = theme::Tokens::get();
-        chrome::title_and_toolbar(self, ui);
-        if self.ui.in_window_menu {
-            menus::menu_bar(self, ui);
-        }
-        if self.ui.show_status_bar {
-            chrome::status_bar(self, ui);
-        }
-        if self.ui.show_file_tabs {
-            chrome::file_tabs(self, ui);
+        let hands_off = self.ui.hands_off;
+        if !hands_off {
+            chrome::title_and_toolbar(self, ui);
+            if self.ui.in_window_menu {
+                menus::menu_bar(self, ui);
+            }
+            if self.ui.show_status_bar {
+                chrome::status_bar(self, ui);
+            }
+            if self.ui.show_file_tabs {
+                chrome::file_tabs(self, ui);
+            }
         }
         let has_doc = !self.session.docs.is_empty() && !self.ui.start_tab;
-        if has_doc && !self.ui.show_toolsets {
+        if has_doc && !self.ui.show_toolsets && !hands_off {
             palettes::toolsets_strip(self, ui);
         }
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| {
-            if has_doc {
+            if has_doc && hands_off {
+                // Hands off: the drawing area alone, without the docked palettes around it
+                canvas::show(self, ui);
+            } else if has_doc {
                 docking::show(self, ui);
-            } else {
+            } else if !hands_off {
                 chrome::start_page(self, ui);
             }
         });

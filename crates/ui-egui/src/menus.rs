@@ -137,6 +137,9 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("ui.shortcuts", "Keyboard Shortcuts...", &["Tools", "Customize", "Keyboard Shortcuts..."], None),
     ("ui.language", "Language", &[], None),
     ("ui.noop", "", &[], None),
+    // Workbench's panel (no menu items or labels: Workbench sends them, people don't choose them)
+    ("view.workbench", "", &[], None),
+    ("view.handsOff", "", &[], None),
     ("ui.quit", "Quit CADCraft", &[], Some("Cmd+Q")),
 ];
 
@@ -199,6 +202,43 @@ fn run_recent_file_command(app: &mut CadApp, id: &str) -> Option<Result<Value, S
         return Some(Ok(Value::Null));
     }
     None
+}
+
+/// Workbench's panel: `view.workbench {on?, accent?: "#rrggbb"}` (its look: palette, square
+/// corners, the session's colour as the accent) and `view.handsOff {on?}` (only the drawing area).
+/// Without `on` each turns its switch over.
+fn run_workbench_command(app: &mut CadApp, id: &str, params: &Value) -> Option<Result<Value, String>> {
+    let flag = |current: bool| params.get("on").and_then(Value::as_bool).unwrap_or(!current);
+    match id {
+        "view.workbench" => {
+            let current = crate::theme::workbench_accent();
+            let on = flag(current.is_some());
+            let accent = match params.get("accent").and_then(Value::as_str) {
+                Some(hex) => match parse_hex(hex) {
+                    Some(c) => Some(c),
+                    None => return Some(Err(format!("accent must be #rrggbb, not \"{}\"", hex.chars().take(16).collect::<String>()))),
+                },
+                None => current,
+            };
+            crate::theme::set_workbench(on.then(|| accent.unwrap_or(egui::Color32::from_rgb(0xff, 0x60, 0x00))));
+            // The styles are installed again on the next frame, in the new look
+            app.shown_theme = None;
+            Some(Ok(json!({ "on": on })))
+        }
+        "view.handsOff" => {
+            app.ui.hands_off = flag(app.ui.hands_off);
+            Some(Ok(json!({ "on": app.ui.hands_off })))
+        }
+        _ => None,
+    }
+}
+
+/// `#rrggbb` to a colour.
+fn parse_hex(s: &str) -> Option<egui::Color32> {
+    let h = s.strip_prefix('#').filter(|h| h.len() == 6)?;
+    let n = u32::from_str_radix(h, 16).ok()?;
+    let [_, r, g, b] = n.to_be_bytes();
+    Some(egui::Color32::from_rgb(r, g, b))
 }
 
 fn run_preference_command(app: &mut CadApp, id: &str, params: &Value) -> Option<Result<Value, String>> {
@@ -384,6 +424,9 @@ fn run_ui_command_inner(app: &mut CadApp, id: &str, params: &Value) -> Option<Re
     // never open a picker.
     let no_path = should_pick_file_path(id, params);
     if let Some(result) = run_recent_file_command(app, id) {
+        return Some(result);
+    }
+    if let Some(result) = run_workbench_command(app, id, params) {
         return Some(result);
     }
     if let Some(result) = run_preference_command(app, id, params) {

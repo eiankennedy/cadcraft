@@ -722,6 +722,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadcraft-embed"
+version = "0.21.0"
+dependencies = [
+ "cadcraft-engine",
+ "cadcraft-io",
+ "cadcraft-ui-egui",
+ "craft-embed",
+ "egui",
+ "serde_json",
+]
+
+[[package]]
 name = "cadcraft-engine"
 version = "0.21.0"
 dependencies = [
@@ -1208,6 +1220,20 @@ dependencies = [
  "kurbo",
  "log",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "craft-embed"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "egui",
+ "egui-wgpu",
+ "log",
+ "png",
+ "pollster 0.4.0",
+ "raw-window-handle",
+ "wgpu",
 ]
 
 [[package]]

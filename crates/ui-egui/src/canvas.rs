@@ -541,14 +541,14 @@ fn paint_pointer_overlay(
         draw_ucs_icon(painter, rect);
         crate::viewcube::ucs_icon(app, ui, rect);
     }
-    if app.ui.show_viewcube && sheet.is_none() {
+    if app.ui.show_viewcube && sheet.is_none() && !app.ui.hands_off {
         draw_viewcube(app, ui, rect);
     }
     viewport_label(painter, rect);
     // Typing and Escape reach the command line even when its overlay is hidden.
     crate::cmdline::keyboard(app, ui.ctx());
     // Command line overlay.
-    if app.ui.show_command_line {
+    if app.ui.show_command_line && !app.ui.hands_off {
         crate::cmdline::show(app, ui, full);
     }
     // Crosshair cursor.
